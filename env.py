@@ -1,12 +1,11 @@
-import numpy as np
+import numpy as np 
 import rospy
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import actionlib
 from control_msgs.msg import *
 from trajectory_msgs.msg import *
 from sensor_msgs.msg import JointState
 from tf import TransformListener
+from math import pi 
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
 import sys, tf
 from gazebo_msgs.srv import *
@@ -18,19 +17,6 @@ JOINT_NAMES = ['shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint',
 DURATION = 0.01
 GOAL = [-0.03,0.90,1.05,-1.57,1.57,0]
 INIT = [-1.02, -2.44, 2.44, 3.13, -0.55, 0.0]
-
-class ContextRecognitionNetwork(nn.Module):
-    def __init__(self, input_dim, hidden_dim):
-        super(ContextRecognitionNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, 2)  # Outputting probabilities for two context states
-
-    def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = torch.sigmoid(self.fc2(x))
-        return x
-
-
 
 class Ur5():
     get_counter = 0
@@ -48,13 +34,11 @@ class Ur5():
                                                                 FollowJointTrajectoryAction)
         self.client.wait_for_server()
         self.initial= FollowJointTrajectoryGoal()
-        self.crn = ContextRecognitionNetwork(input_dim=10, hidden_dim=50)
-        self.optimizer = torch.optim.Adam(self.crn.parameters(), lr=0.01)
         self.initial.trajectory = JointTrajectory()
         self.initial.trajectory.joint_names = JOINT_NAMES
         self.current_joints = init_joints
-        self.initial.trajectory.points = [JointTrajectoryPoint(positions=INIT, velocities=[0]*6,
-                                                                        time_from_start=rospy.Duration(duration))]
+        self.initial.trajectory.points = [JointTrajectoryPoint(positions=INIT, velocities=[0]*6, 
+                                                                        time_from_start=rospy.Duration(duration))]                                                                
         self.tf = TransformListener()                            
         self.goal_pose = np.array(goal_pose)
         self.base_pos = self.get_pos(link_name='base_link')
@@ -94,9 +78,8 @@ class Ur5():
         self.client.wait_for_result()
         position, rpy = self.get_pos(link_name='ee_link')
 
-        state = np.random.randn(10)  # Placeholder state
-        context_features = self.extract_context_features(state)
-        context_state = self.crn(context_features)
+        state = self.get_state(action,position)
+        reward, terminal = self.get_reward(position,rpy,action)
 
         return state, reward, terminal
 
